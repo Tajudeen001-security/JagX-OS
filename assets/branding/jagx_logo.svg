@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Geometric J + X mark for JagX OS -->
+  <rect width="120" height="120" rx="28" fill="#0F172A"/>
+  <path d="M32 28h24v48c0 12-8 20-20 20H28v-16h6c4 0 6-2 6-6V28z" fill="#3B82F6"/>
+  <path d="M68 36l18 24 18-24h-14l-8 11-8-11H68zM68 84l18-24 18 24H90l-8-11-8 11H68z" fill="#8B5CF6"/>
+  <circle cx="96" cy="28" r="6" fill="#06B6D4"/>
+</svg>
