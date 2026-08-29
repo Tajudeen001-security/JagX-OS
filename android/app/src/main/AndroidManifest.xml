@@ -7,8 +7,8 @@
     <application
         android:label="JagX OS"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:roundIcon="@drawable/ic_launcher_foreground"
         android:theme="@style/LaunchTheme"
         android:hardwareAccelerated="true"
         android:largeHeap="true">
