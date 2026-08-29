@@ -2,6 +2,7 @@
 // Copyright (c) 2026 JagX OS Contributors
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:jagx_os/core/theme/jagx_theme.dart';
 import 'package:jagx_os/features/home/home_screen.dart';
 
@@ -25,7 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardPage(
       icon: Icons.home_filled,
       title: 'Your Home, Reimagined',
-      body: 'Beautiful home screen, app drawer, dock, folders and widgets — all designed for speed and clarity.',
+      body: 'Beautiful home screen, app drawer, dock and gestures designed for speed and clarity.',
     ),
     _OnboardPage(
       icon: Icons.palette,
@@ -35,7 +36,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardPage(
       icon: Icons.security,
       title: 'Set as Default Launcher',
-      body: 'After install, set JagX OS as your default home app to experience the full system UI.',
+      body: 'Tap the button below. On the next screen choose JagX OS as your Home app. Then press the Home button.',
     ),
   ];
 
@@ -45,6 +46,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
+  Future<void> _openHomeSettings() async {
+    // Opens the system "Home app" / default launcher picker
+    const channel = MethodChannel('jagx_os/launcher');
+    try {
+      await channel.invokeMethod('openHomeSettings');
+    } catch (_) {
+      // Fallback: try common Android intents via platform
+      try {
+        await channel.invokeMethod('openHomeSettingsFallback');
+      } catch (_) {}
+    }
+  }
+
   void _next() {
     if (_page < _pages.length - 1) {
       _controller.nextPage(
@@ -52,9 +66,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         curve: Curves.easeOut,
       );
     } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      _openHomeSettings().then((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        }
+      });
     }
   }
 
@@ -102,7 +120,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                   child: Text(
-                    _page == _pages.length - 1 ? 'Get Started' : 'Continue',
+                    _page == _pages.length - 1
+                        ? 'Set as Default Launcher'
+                        : 'Continue',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -111,15 +131,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
-                );
-              },
-              child: const Text('Skip'),
-            ),
+            const SizedBox(height: 12),
+            if (_page == _pages.length - 1)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  );
+                },
+                child: const Text('Skip for now'),
+              )
+            else
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  );
+                },
+                child: const Text('Skip'),
+              ),
             const SizedBox(height: 24),
           ],
         ),
