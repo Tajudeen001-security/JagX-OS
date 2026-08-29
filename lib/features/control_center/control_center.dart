@@ -1,6 +1,6 @@
 // JRILICENSE
 // Copyright (c) 2026 JagX OS Contributors
-// JagX Control Center — not iOS, not Android stock. Fully JagX.
+// JagX Control Center — swipe to close only (no X).
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -9,8 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jagx_os/core/theme/jagx_theme.dart';
+import 'package:jagx_os/core/services/system_service.dart';
 
-/// Default tile order — unique JagX set
 const _defaultOrder = [
   'wifi',
   'bt',
@@ -62,6 +62,9 @@ class ControlCenterState {
   final double volume;
   final bool editMode;
   final bool islandExpanded;
+  final String mediaTitle;
+  final String mediaArtist;
+  final bool mediaPlaying;
 
   ControlCenterState({
     required this.order,
@@ -70,6 +73,9 @@ class ControlCenterState {
     required this.volume,
     required this.editMode,
     required this.islandExpanded,
+    required this.mediaTitle,
+    required this.mediaArtist,
+    required this.mediaPlaying,
   });
 
   ControlCenterState copyWith({
@@ -79,6 +85,9 @@ class ControlCenterState {
     double? volume,
     bool? editMode,
     bool? islandExpanded,
+    String? mediaTitle,
+    String? mediaArtist,
+    bool? mediaPlaying,
   }) {
     return ControlCenterState(
       order: order ?? this.order,
@@ -87,6 +96,9 @@ class ControlCenterState {
       volume: volume ?? this.volume,
       editMode: editMode ?? this.editMode,
       islandExpanded: islandExpanded ?? this.islandExpanded,
+      mediaTitle: mediaTitle ?? this.mediaTitle,
+      mediaArtist: mediaArtist ?? this.mediaArtist,
+      mediaPlaying: mediaPlaying ?? this.mediaPlaying,
     );
   }
 }
@@ -106,6 +118,9 @@ class ControlCenterNotifier extends StateNotifier<ControlCenterState> {
       volume: 0.5,
       editMode: false,
       islandExpanded: false,
+      mediaTitle: 'JAGX STREAM',
+      mediaArtist: 'No active media',
+      mediaPlaying: false,
     );
   }
 
@@ -115,9 +130,7 @@ class ControlCenterNotifier extends StateNotifier<ControlCenterState> {
     if (raw != null) {
       try {
         final list = (jsonDecode(raw) as List).cast<String>();
-        if (list.isNotEmpty) {
-          state = state.copyWith(order: list);
-        }
+        if (list.isNotEmpty) state = state.copyWith(order: list);
       } catch (_) {}
     }
     final bright = prefs.getDouble('jagx_cc_bright');
@@ -141,26 +154,74 @@ class ControlCenterNotifier extends StateNotifier<ControlCenterState> {
     await prefs.setDouble('jagx_cc_vol', state.volume);
   }
 
-  void toggle(String id) {
-    final next = Map<String, bool>.from(state.active);
-    next[id] = !(next[id] ?? false);
-    state = state.copyWith(active: next);
+  Future<void> activate(String id) async {
     HapticFeedback.selectionClick();
+    final next = Map<String, bool>.from(state.active);
+
+    switch (id) {
+      case 'wifi':
+        await SystemService.openWifi();
+        next[id] = true;
+        break;
+      case 'bt':
+        await SystemService.openBluetooth();
+        next[id] = true;
+        break;
+      case 'data':
+        await SystemService.openData();
+        next[id] = true;
+        break;
+      case 'airplane':
+        await SystemService.openAirplane();
+        next[id] = !(next[id] ?? false);
+        break;
+      case 'torch':
+        final on = await SystemService.toggleTorch();
+        next[id] = on;
+        break;
+      case 'dnd':
+      case 'mute':
+      case 'rotate':
+      case 'saver':
+        next[id] = !(next[id] ?? false);
+        break;
+      case 'location':
+        await SystemService.openLocation();
+        next[id] = true;
+        break;
+      case 'hotspot':
+        await SystemService.openHotspot();
+        next[id] = true;
+        break;
+      case 'cast':
+        await SystemService.openCast();
+        next[id] = true;
+        break;
+      default:
+        next[id] = !(next[id] ?? false);
+    }
+
+    state = state.copyWith(active: next);
   }
 
   void setBrightness(double v) {
     state = state.copyWith(brightness: v.clamp(0.0, 1.0));
+    SystemService.setBrightness(v);
     _saveSliders();
   }
 
   void setVolume(double v) {
+    final old = state.volume;
     state = state.copyWith(volume: v.clamp(0.0, 1.0));
+    if (v > old) {
+      SystemService.volumeUp();
+    } else if (v < old) {
+      SystemService.volumeDown();
+    }
     _saveSliders();
   }
 
-  void setEditMode(bool v) {
-    state = state.copyWith(editMode: v);
-  }
+  void setEditMode(bool v) => state = state.copyWith(editMode: v);
 
   void reorder(int oldIndex, int newIndex) {
     final list = List<String>.from(state.order);
@@ -184,6 +245,11 @@ class ControlCenterNotifier extends StateNotifier<ControlCenterState> {
   void toggleIsland() {
     state = state.copyWith(islandExpanded: !state.islandExpanded);
   }
+
+  void toggleMedia() {
+    state = state.copyWith(mediaPlaying: !state.mediaPlaying);
+    HapticFeedback.lightImpact();
+  }
 }
 
 final controlCenterProvider =
@@ -191,269 +257,421 @@ final controlCenterProvider =
   return ControlCenterNotifier();
 });
 
-/// Full-screen Control Center overlay
-class JagXControlCenter extends ConsumerWidget {
+class JagXControlCenter extends ConsumerStatefulWidget {
   final VoidCallback onClose;
 
   const JagXControlCenter({super.key, required this.onClose});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JagXControlCenter> createState() => _JagXControlCenterState();
+}
+
+class _JagXControlCenterState extends ConsumerState<JagXControlCenter>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _anim;
+  late Animation<Offset> _slide;
+  late Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, -0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic));
+    _fade = CurvedAnimation(parent: _anim, curve: Curves.easeOut);
+    _anim.forward();
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  Future<void> _close() async {
+    await _anim.reverse();
+    widget.onClose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = ref.watch(themeProvider);
     final cc = ref.watch(controlCenterProvider);
     final notifier = ref.read(controlCenterProvider.notifier);
 
     return Material(
-      color: Colors.black.withOpacity(0.55),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Drag handle / dismiss
-            GestureDetector(
-              onVerticalDragEnd: (d) {
-                if (d.primaryVelocity != null && d.primaryVelocity! < -200) {
-                  onClose();
-                }
-              },
-              onTap: onClose,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.only(top: 8, bottom: 4),
-                color: Colors.transparent,
-                child: Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: theme.primary.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // === DYNAMIC ISLAND (JagX style) ===
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: GestureDetector(
-                onTap: notifier.toggleIsland,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutCubic,
-                  width: cc.islandExpanded ? double.infinity : 140,
-                  height: cc.islandExpanded ? 72 : 36,
-                  decoration: BoxDecoration(
-                    color: theme.surface,
-                    borderRadius: BorderRadius.circular(
-                      cc.islandExpanded ? 24 : 20,
-                    ),
-                    border: Border.all(
-                      color: theme.primary.withOpacity(0.6),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: theme.glow.withOpacity(0.35),
-                        blurRadius: 16,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: cc.islandExpanded
-                        ? Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: theme.primary,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: theme.glow,
-                                      blurRadius: 8,
-                                    ),
-                                  ],
-                                ),
+      color: Colors.transparent,
+      child: GestureDetector(
+        onVerticalDragEnd: (d) {
+          if (d.primaryVelocity != null && d.primaryVelocity! < -180) {
+            _close();
+          }
+        },
+        child: FadeTransition(
+          opacity: _fade,
+          child: Container(
+            color: Colors.black.withOpacity(0.62),
+            child: SafeArea(
+              child: SlideTransition(
+                position: _slide,
+                child: Column(
+                  children: [
+                    // Swipe hint bar only — no X
+                    GestureDetector(
+                      onVerticalDragEnd: (d) {
+                        if (d.primaryVelocity != null &&
+                            d.primaryVelocity! < -120) {
+                          _close();
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.only(top: 10, bottom: 6),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: theme.primary.withOpacity(0.55),
+                                borderRadius: BorderRadius.circular(3),
                               ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'JAGX  ·  CORE ACTIVE',
-                                style: GoogleFonts.shareTechMono(
-                                  color: theme.primary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Text(
-                            'JAGX',
-                            style: GoogleFonts.shareTechMono(
-                              color: theme.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 3,
                             ),
-                          ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Title row
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
-              child: Row(
-                children: [
-                  Text(
-                    '> CONTROL_NODE',
-                    style: GoogleFonts.shareTechMono(
-                      color: theme.primary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (cc.editMode)
-                    TextButton(
-                      onPressed: () => notifier.reset(),
-                      child: Text(
-                        'RESET',
-                        style: GoogleFonts.shareTechMono(
-                          color: theme.danger,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                            const SizedBox(height: 6),
+                            Text(
+                              'SWIPE UP TO CLOSE',
+                              style: GoogleFonts.shareTechMono(
+                                color: theme.textDim,
+                                fontSize: 9,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  TextButton(
-                    onPressed: () => notifier.setEditMode(!cc.editMode),
-                    child: Text(
-                      cc.editMode ? 'DONE' : 'MOVE',
-                      style: GoogleFonts.shareTechMono(
-                        color: theme.primary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+
+                    // Dynamic Island
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 6,
+                      ),
+                      child: GestureDetector(
+                        onTap: notifier.toggleIsland,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 340),
+                          curve: Curves.easeOutBack,
+                          width: cc.islandExpanded ? double.infinity : 132,
+                          height: cc.islandExpanded ? 68 : 34,
+                          decoration: BoxDecoration(
+                            color: theme.surface,
+                            borderRadius: BorderRadius.circular(
+                              cc.islandExpanded ? 22 : 18,
+                            ),
+                            border: Border.all(
+                              color: theme.primary.withOpacity(0.65),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.glow.withOpacity(0.4),
+                                blurRadius: 18,
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              child: cc.islandExpanded
+                                  ? Row(
+                                      key: const ValueKey('exp'),
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Container(
+                                          width: 10,
+                                          height: 10,
+                                          decoration: BoxDecoration(
+                                            color: theme.primary,
+                                            shape: BoxShape.circle,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: theme.glow,
+                                                blurRadius: 8,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Text(
+                                          'JAGX  ·  CORE ACTIVE',
+                                          style: GoogleFonts.shareTechMono(
+                                            color: theme.primary,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 2,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Text(
+                                      key: const ValueKey('col'),
+                                      'JAGX',
+                                      style: GoogleFonts.shareTechMono(
+                                        color: theme.primary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 3,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close, color: theme.primary, size: 22),
-                    onPressed: onClose,
-                  ),
-                ],
+
+                    // Title + MOVE / RESET (no close X)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            '> CONTROL_NODE',
+                            style: GoogleFonts.shareTechMono(
+                              color: theme.primary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (cc.editMode)
+                            TextButton(
+                              onPressed: () => notifier.reset(),
+                              child: Text(
+                                'RESET',
+                                style: GoogleFonts.shareTechMono(
+                                  color: theme.danger,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          TextButton(
+                            onPressed: () =>
+                                notifier.setEditMode(!cc.editMode),
+                            child: Text(
+                              cc.editMode ? 'DONE' : 'MOVE',
+                              style: GoogleFonts.shareTechMono(
+                                color: theme.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (cc.editMode)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          'Drag tiles · RESET restores default',
+                          style: GoogleFonts.shareTechMono(
+                            color: theme.textDim,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+
+                    // Media card
+                    if (!cc.editMode)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                        child: _MediaCard(
+                          theme: theme,
+                          title: cc.mediaTitle,
+                          artist: cc.mediaArtist,
+                          playing: cc.mediaPlaying,
+                          onPlay: notifier.toggleMedia,
+                        ),
+                      ),
+
+                    // Tiles
+                    Expanded(
+                      child: cc.editMode
+                          ? ReorderableListView.builder(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: cc.order.length,
+                              onReorder: notifier.reorder,
+                              itemBuilder: (context, index) {
+                                final id = cc.order[index];
+                                final def = _catalog[id]!;
+                                return _EditTile(
+                                  key: ValueKey(id),
+                                  theme: theme,
+                                  def: def,
+                                  index: index,
+                                );
+                              },
+                            )
+                          : GridView.builder(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 0.9,
+                              ),
+                              itemCount: cc.order.length,
+                              itemBuilder: (context, i) {
+                                final id = cc.order[i];
+                                final def = _catalog[id]!;
+                                final on = cc.active[id] ?? false;
+                                return _CcTile(
+                                  theme: theme,
+                                  def: def,
+                                  active: on,
+                                  onTap: () => notifier.activate(id),
+                                );
+                              },
+                            ),
+                    ),
+
+                    // Sliders
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _JagXSlider(
+                              theme: theme,
+                              icon: Icons.brightness_6,
+                              label: 'LIGHT',
+                              value: cc.brightness,
+                              onChanged: notifier.setBrightness,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _JagXSlider(
+                              theme: theme,
+                              icon: Icons.volume_up,
+                              label: 'AUDIO',
+                              value: cc.volume,
+                              onChanged: notifier.setVolume,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Text(
+                        'Swipe up to close',
+                        style: GoogleFonts.shareTechMono(
+                          color: theme.textDim,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-            if (cc.editMode)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  'Hold & drag tiles to rearrange · RESET restores default',
+class _MediaCard extends StatelessWidget {
+  final JagXThemeData theme;
+  final String title;
+  final String artist;
+  final bool playing;
+  final VoidCallback onPlay;
+
+  const _MediaCard({
+    required this.theme,
+    required this.title,
+    required this.artist,
+    required this.playing,
+    required this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.primary.withOpacity(0.35)),
+        boxShadow: [
+          BoxShadow(color: theme.glow.withOpacity(0.12), blurRadius: 12),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                colors: [theme.primary, theme.secondary],
+              ),
+            ),
+            child: Icon(
+              playing ? Icons.graphic_eq : Icons.music_note,
+              color: theme.background,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.shareTechMono(
+                    color: theme.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  artist,
                   style: GoogleFonts.shareTechMono(
                     color: theme.textDim,
-                    fontSize: 10,
+                    fontSize: 11,
                   ),
                 ),
-              ),
-
-            // Tiles
-            Expanded(
-              child: cc.editMode
-                  ? ReorderableListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: cc.order.length,
-                      onReorder: notifier.reorder,
-                      proxyDecorator: (child, index, animation) {
-                        return Material(
-                          color: Colors.transparent,
-                          elevation: 8,
-                          child: child,
-                        );
-                      },
-                      itemBuilder: (context, index) {
-                        final id = cc.order[index];
-                        final def = _catalog[id]!;
-                        final on = cc.active[id] ?? false;
-                        return _EditTile(
-                          key: ValueKey(id),
-                          theme: theme,
-                          def: def,
-                          active: on,
-                          index: index,
-                        );
-                      },
-                    )
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 0.9,
-                      ),
-                      itemCount: cc.order.length,
-                      itemBuilder: (context, i) {
-                        final id = cc.order[i];
-                        final def = _catalog[id]!;
-                        final on = cc.active[id] ?? false;
-                        return _CcTile(
-                          theme: theme,
-                          def: def,
-                          active: on,
-                          onTap: () => notifier.toggle(id),
-                        );
-                      },
-                    ),
+              ],
             ),
-
-            // Sliders — JagX style vertical-ish bars in a row
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _JagXSlider(
-                      theme: theme,
-                      icon: Icons.brightness_6,
-                      label: 'LIGHT',
-                      value: cc.brightness,
-                      onChanged: notifier.setBrightness,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _JagXSlider(
-                      theme: theme,
-                      icon: Icons.volume_up,
-                      label: 'AUDIO',
-                      value: cc.volume,
-                      onChanged: notifier.setVolume,
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          IconButton(
+            onPressed: onPlay,
+            icon: Icon(
+              playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+              color: theme.primary,
+              size: 36,
             ),
-
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                'Swipe up to close · MOVE to rearrange',
-                style: GoogleFonts.shareTechMono(
-                  color: theme.textDim,
-                  fontSize: 10,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -477,9 +695,10 @@ class _CcTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
         decoration: BoxDecoration(
-          color: active ? theme.primary.withOpacity(0.2) : theme.surface,
+          color: active ? theme.primary.withOpacity(0.22) : theme.surface,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: active ? theme.primary : theme.primary.withOpacity(0.25),
@@ -488,8 +707,8 @@ class _CcTile extends StatelessWidget {
           boxShadow: active
               ? [
                   BoxShadow(
-                    color: theme.glow.withOpacity(0.35),
-                    blurRadius: 12,
+                    color: theme.glow.withOpacity(0.4),
+                    blurRadius: 14,
                   )
                 ]
               : null,
@@ -509,7 +728,6 @@ class _CcTile extends StatelessWidget {
                 color: active ? theme.primary : theme.textDim,
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
               ),
             ),
           ],
@@ -522,14 +740,12 @@ class _CcTile extends StatelessWidget {
 class _EditTile extends StatelessWidget {
   final JagXThemeData theme;
   final CcTileDef def;
-  final bool active;
   final int index;
 
   const _EditTile({
     super.key,
     required this.theme,
     required this.def,
-    required this.active,
     required this.index,
   });
 
@@ -628,10 +844,7 @@ class _JagXSlider extends StatelessWidget {
               overlayColor: theme.glow.withOpacity(0.2),
               trackHeight: 4,
             ),
-            child: Slider(
-              value: value,
-              onChanged: onChanged,
-            ),
+            child: Slider(value: value, onChanged: onChanged),
           ),
         ],
       ),
