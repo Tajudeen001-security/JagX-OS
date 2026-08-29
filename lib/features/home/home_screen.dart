@@ -13,6 +13,7 @@ import 'package:jagx_os/features/settings/settings_screen.dart';
 import 'package:jagx_os/features/widgets/terminal_clock.dart';
 import 'package:jagx_os/features/search/quick_search.dart';
 import 'package:jagx_os/features/system/system_panel.dart';
+import 'package:jagx_os/features/control_center/control_center.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -27,6 +28,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _showDrawer = false;
   bool _showSearch = false;
   bool _showSystem = false;
+  bool _showCC = false;
 
   @override
   void dispose() {
@@ -36,6 +38,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _openDrawer() => setState(() => _showDrawer = true);
   void _closeDrawer() => setState(() => _showDrawer = false);
+  void _openCC() => setState(() => _showCC = true);
+  void _closeCC() => setState(() => _showCC = false);
 
   Future<void> _launch(AppInfo app) async {
     final ok = await launchApp(app.packageName ?? '');
@@ -157,11 +161,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          const Positioned(
+          // Swipe down from top edge → Control Center
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: JagXStatusBar(),
+            height: 48,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragEnd: (d) {
+                if (d.primaryVelocity != null && d.primaryVelocity! > 250) {
+                  _openCC();
+                }
+              },
+              child: const JagXStatusBar(),
+            ),
           ),
 
           // Header
@@ -194,6 +208,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 const Spacer(),
                 _ChipBtn(
                   theme: theme,
+                  label: 'CC',
+                  onTap: _openCC,
+                ),
+                const SizedBox(width: 6),
+                _ChipBtn(
+                  theme: theme,
                   label: 'SYS',
                   onTap: () => setState(() => _showSystem = true),
                 ),
@@ -219,7 +239,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Clock widget
           const Positioned(
             top: 78,
             left: 0,
@@ -227,7 +246,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: TerminalClock(),
           ),
 
-          // Apps grid
           Positioned.fill(
             top: 160,
             bottom: 90,
@@ -304,7 +322,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Page dots
           Positioned(
             bottom: 100,
             left: 0,
@@ -335,7 +352,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Dock
           Positioned(
             bottom: 16,
             left: 20,
@@ -391,17 +407,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   _DockBtn(
                     theme: theme,
-                    icon: Icons.camera_alt,
-                    label: 'CAM',
-                    onTap: () async {
-                      final apps = await ref.read(installedAppsProvider.future);
-                      final cam = apps
-                          .where((a) =>
-                              (a.packageName ?? '').contains('camera') ||
-                              (a.name ?? '').toLowerCase() == 'camera')
-                          .firstOrNull;
-                      if (cam != null) _launch(cam);
-                    },
+                    icon: Icons.tune,
+                    label: 'CC',
+                    onTap: _openCC,
                   ),
                 ],
               ),
@@ -438,6 +446,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: SystemPanel(
                 onClose: () => setState(() => _showSystem = false),
               ),
+            ),
+
+          if (_showCC)
+            Positioned.fill(
+              child: JagXControlCenter(onClose: _closeCC),
             ),
         ],
       ),
