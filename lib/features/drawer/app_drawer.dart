@@ -2,23 +2,21 @@
 // Copyright (c) 2026 JagX OS Contributors
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:jagx_os/core/theme/jagx_theme.dart';
+import 'package:jagx_os/core/services/app_service.dart';
 
-class AppDrawer extends StatefulWidget {
-  final List apps;
+class AppDrawer extends ConsumerStatefulWidget {
   final VoidCallback onClose;
 
-  const AppDrawer({
-    super.key,
-    required this.apps,
-    required this.onClose,
-  });
+  const AppDrawer({super.key, required this.onClose});
 
   @override
-  State<AppDrawer> createState() => _AppDrawerState();
+  ConsumerState<AppDrawer> createState() => _AppDrawerState();
 }
 
-class _AppDrawerState extends State<AppDrawer> {
+class _AppDrawerState extends ConsumerState<AppDrawer> {
   final TextEditingController _search = TextEditingController();
   String _query = '';
 
@@ -28,15 +26,23 @@ class _AppDrawerState extends State<AppDrawer> {
     super.dispose();
   }
 
+  Future<void> _launch(AppInfo app) async {
+    final ok = await launchApp(app.packageName ?? '');
+    if (ok) {
+      widget.onClose();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open ${app.name}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filtered = widget.apps.where((a) {
-      final name = (a as dynamic).name as String;
-      return name.toLowerCase().contains(_query.toLowerCase());
-    }).toList();
+    final appsAsync = ref.watch(installedAppsProvider);
 
     return Material(
-      color: Colors.black.withOpacity(0.92),
+      color: Colors.black.withOpacity(0.94),
       child: SafeArea(
         child: Column(
           children: [
@@ -45,7 +51,7 @@ class _AppDrawerState extends State<AppDrawer> {
               child: Row(
                 children: [
                   const Text(
-                    'Apps',
+                    'All Apps',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -81,40 +87,79 @@ class _AppDrawerState extends State<AppDrawer> {
               ),
             ),
             Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  mainAxisSpacing: 20,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.75,
+              child: appsAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(color: JagXColors.primary),
                 ),
-                itemCount: filtered.length,
-                itemBuilder: (context, i) {
-                  final app = filtered[i] as dynamic;
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(app.icon, color: Colors.white, size: 28),
+                error: (e, _) => Center(
+                  child: Text(
+                    'Error loading apps\n$e',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+                data: (apps) {
+                  final filtered = _query.isEmpty
+                      ? apps
+                      : apps
+                          .where((a) => (a.name ?? '')
+                              .toLowerCase()
+                              .contains(_query.toLowerCase()))
+                          .toList();
+
+                  if (filtered.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No apps found',
+                        style: TextStyle(color: Colors.white54),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        app.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
+                    );
+                  }
+
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      mainAxisSpacing: 20,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 0.75,
+                    ),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, i) {
+                      final app = filtered[i];
+                      return GestureDetector(
+                        onTap: () => _launch(app),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: app.icon != null
+                                  ? Image.memory(app.icon!, fit: BoxFit.cover)
+                                  : const Icon(Icons.android,
+                                      color: Colors.white70, size: 28),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              app.name ?? 'App',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
                   );
                 },
               ),
