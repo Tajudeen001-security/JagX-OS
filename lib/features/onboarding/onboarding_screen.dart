@@ -3,40 +3,42 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:jagx_os/core/theme/jagx_theme.dart';
 import 'package:jagx_os/features/home/home_screen.dart';
 
-class OnboardingScreen extends StatefulWidget {
+class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
   @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
+  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final PageController _controller = PageController();
   int _page = 0;
 
   final _pages = const [
     _OnboardPage(
-      icon: Icons.phone_android,
-      title: 'Welcome to JagX OS',
-      body: 'A complete custom launcher and system UI experience built for every Android device.',
+      icon: Icons.terminal,
+      title: 'JAGX OS',
+      body: 'Custom launcher shell. Not a normal home screen.',
     ),
     _OnboardPage(
-      icon: Icons.home_filled,
-      title: 'Your Home, Reimagined',
-      body: 'Beautiful home screen, app drawer, dock and gestures designed for speed and clarity.',
+      icon: Icons.apps,
+      title: 'FULL APP ACCESS',
+      body: 'Reads and launches every app installed on this device.',
     ),
     _OnboardPage(
       icon: Icons.palette,
-      title: 'Fully Themeable',
-      body: 'Dark AMOLED mode, accent colors, and a consistent design language across every panel.',
+      title: 'THEME PROTOCOLS',
+      body: 'MATRIX, CYBERPUNK, GHOST, BLOOD, OCEAN, AMBER. Switch anytime in CFG.',
     ),
     _OnboardPage(
-      icon: Icons.security,
-      title: 'Set as Default Launcher',
-      body: 'Tap the button below. On the next screen choose JagX OS as your Home app. Then press the Home button.',
+      icon: Icons.home_filled,
+      title: 'SET AS DEFAULT',
+      body: 'Tap below, then choose JagX OS as your Home app. Press Home after.',
     ),
   ];
 
@@ -47,12 +49,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _openHomeSettings() async {
-    // Opens the system "Home app" / default launcher picker
     const channel = MethodChannel('jagx_os/launcher');
     try {
       await channel.invokeMethod('openHomeSettings');
     } catch (_) {
-      // Fallback: try common Android intents via platform
       try {
         await channel.invokeMethod('openHomeSettingsFallback');
       } catch (_) {}
@@ -78,7 +78,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
+
     return Scaffold(
+      backgroundColor: theme.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -99,7 +102,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   width: _page == i ? 20 : 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: _page == i ? JagXColors.primary : Colors.white24,
+                    color: _page == i ? theme.primary : theme.primary.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 );
@@ -114,42 +117,40 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 child: FilledButton(
                   onPressed: _next,
                   style: FilledButton.styleFrom(
-                    backgroundColor: JagXColors.primary,
+                    backgroundColor: theme.primary,
+                    foregroundColor: theme.background,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: Text(
                     _page == _pages.length - 1
-                        ? 'Set as Default Launcher'
-                        : 'Continue',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                        ? 'SET AS DEFAULT LAUNCHER'
+                        : 'CONTINUE',
+                    style: GoogleFonts.shareTechMono(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
                     ),
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            if (_page == _pages.length - 1)
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const HomeScreen()),
-                  );
-                },
-                child: const Text('Skip for now'),
-              )
-            else
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const HomeScreen()),
-                  );
-                },
-                child: const Text('Skip'),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                );
+              },
+              child: Text(
+                'SKIP',
+                style: GoogleFonts.shareTechMono(
+                  color: theme.textDim,
+                  letterSpacing: 2,
+                ),
               ),
+            ),
             const SizedBox(height: 24),
           ],
         ),
@@ -158,7 +159,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
-class _OnboardPage extends StatelessWidget {
+class _OnboardPage extends ConsumerWidget {
   final IconData icon;
   final String title;
   final String body;
@@ -170,7 +171,8 @@ class _OnboardPage extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(themeProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
@@ -180,28 +182,36 @@ class _OnboardPage extends StatelessWidget {
             width: 96,
             height: 96,
             decoration: BoxDecoration(
-              color: JagXColors.primary.withOpacity(0.15),
+              color: theme.primary.withOpacity(0.12),
               shape: BoxShape.circle,
+              border: Border.all(color: theme.primary.withOpacity(0.5)),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.glow.withOpacity(0.3),
+                  blurRadius: 20,
+                ),
+              ],
             ),
-            child: Icon(icon, size: 48, color: JagXColors.primary),
+            child: Icon(icon, size: 44, color: theme.primary),
           ),
           const SizedBox(height: 40),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 26,
+            style: GoogleFonts.shareTechMono(
+              fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: theme.primary,
+              letterSpacing: 2,
             ),
           ),
           const SizedBox(height: 16),
           Text(
             body,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
+            style: GoogleFonts.shareTechMono(
+              fontSize: 14,
+              color: theme.textDim,
               height: 1.5,
             ),
           ),
