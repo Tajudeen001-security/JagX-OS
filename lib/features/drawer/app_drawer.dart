@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:jagx_os/core/theme/jagx_theme.dart';
 import 'package:jagx_os/core/services/app_service.dart';
@@ -32,17 +33,18 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
       widget.onClose();
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open ${app.name}')),
+        SnackBar(content: Text('FAILED :: ${app.name}')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
     final appsAsync = ref.watch(installedAppsProvider);
 
     return Material(
-      color: Colors.black.withOpacity(0.94),
+      color: theme.background.withOpacity(0.97),
       child: SafeArea(
         child: Column(
           children: [
@@ -50,17 +52,18 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
                 children: [
-                  const Text(
-                    'All Apps',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
+                  Text(
+                    '> APP_REGISTRY',
+                    style: GoogleFonts.shareTechMono(
+                      color: theme.primary,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
                     ),
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
+                    icon: Icon(Icons.close, color: theme.primary),
                     onPressed: widget.onClose,
                   ),
                 ],
@@ -71,16 +74,28 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
               child: TextField(
                 controller: _search,
                 onChanged: (v) => setState(() => _query = v),
-                style: const TextStyle(color: Colors.white),
+                style: GoogleFonts.shareTechMono(color: theme.text),
+                cursorColor: theme.primary,
                 decoration: InputDecoration(
-                  hintText: 'Search apps',
-                  hintStyle: const TextStyle(color: Colors.white54),
-                  prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                  hintText: 'search_package...',
+                  hintStyle: GoogleFonts.shareTechMono(
+                    color: theme.textDim,
+                    fontSize: 13,
+                  ),
+                  prefixIcon: Icon(Icons.terminal, color: theme.primary),
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.1),
+                  fillColor: theme.surface,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: theme.primary.withOpacity(0.4)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: theme.primary.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: theme.primary, width: 1.5),
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 ),
@@ -88,14 +103,16 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
             ),
             Expanded(
               child: appsAsync.when(
-                loading: () => const Center(
-                  child: CircularProgressIndicator(color: JagXColors.primary),
+                loading: () => Center(
+                  child: Text(
+                    'LOADING...',
+                    style: GoogleFonts.shareTechMono(color: theme.primary),
+                  ),
                 ),
                 error: (e, _) => Center(
                   child: Text(
-                    'Error loading apps\n$e',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70),
+                    'ERR :: $e',
+                    style: GoogleFonts.shareTechMono(color: theme.danger),
                   ),
                 ),
                 data: (apps) {
@@ -108,10 +125,10 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                           .toList();
 
                   if (filtered.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Text(
-                        'No apps found',
-                        style: TextStyle(color: Colors.white54),
+                        'NO_MATCH',
+                        style: GoogleFonts.shareTechMono(color: theme.textDim),
                       ),
                     );
                   }
@@ -121,7 +138,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 4,
-                      mainAxisSpacing: 20,
+                      mainAxisSpacing: 18,
                       crossAxisSpacing: 12,
                       childAspectRatio: 0.75,
                     ),
@@ -134,26 +151,29 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 56,
-                              height: 56,
+                              width: 54,
+                              height: 54,
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(16),
+                                color: theme.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: theme.primary.withOpacity(0.3),
+                                ),
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: app.icon != null
                                   ? Image.memory(app.icon!, fit: BoxFit.cover)
-                                  : const Icon(Icons.android,
-                                      color: Colors.white70, size: 28),
+                                  : Icon(Icons.terminal,
+                                      color: theme.primary, size: 26),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Text(
-                              app.name ?? 'App',
+                              app.name ?? 'APP',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
+                              style: GoogleFonts.shareTechMono(
+                                color: theme.text,
+                                fontSize: 10,
                               ),
                             ),
                           ],

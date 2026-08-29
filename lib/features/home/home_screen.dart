@@ -3,12 +3,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:jagx_os/core/theme/jagx_theme.dart';
 import 'package:jagx_os/core/services/app_service.dart';
 import 'package:jagx_os/features/status_bar/status_bar.dart';
 import 'package:jagx_os/features/drawer/app_drawer.dart';
-import 'package:jagx_os/features/quick_settings/quick_settings_panel.dart';
+import 'package:jagx_os/features/settings/settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,15 +22,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _showDrawer = false;
-  bool _showQuickSettings = false;
-
-  // Common system apps we try to pin in the dock by package name patterns
-  static const _dockPackages = [
-    'com.android.dialer',
-    'com.google.android.dialer',
-    'com.android.contacts',
-    'com.transsion.dialer',
-  ];
 
   @override
   void dispose() {
@@ -44,36 +36,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final ok = await launchApp(app.packageName ?? '');
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open ${app.name}')),
+        SnackBar(content: Text('FAILED :: ${app.name}')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
     final appsAsync = ref.watch(installedAppsProvider);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: theme.background,
       body: Stack(
         children: [
-          // Wallpaper
+          // Dark base + subtle grid feel
           Positioned.fill(
             child: Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFF0F172A),
-                    Color(0xFF1E1B4B),
-                    Color(0xFF0F0F12),
+                    theme.background,
+                    theme.surface,
+                    theme.background,
                   ],
                 ),
               ),
             ),
           ),
 
+          // Top status
           const Positioned(
             top: 0,
             left: 0,
@@ -81,33 +75,88 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: JagXStatusBar(),
           ),
 
-          // Home pages with real apps
+          // Header label
+          Positioned(
+            top: 52,
+            left: 20,
+            right: 20,
+            child: Row(
+              children: [
+                Text(
+                  '> HOME_SHELL',
+                  style: GoogleFonts.shareTechMono(
+                    color: theme.primary,
+                    fontSize: 12,
+                    letterSpacing: 2,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.primary.withOpacity(0.5)),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'CFG',
+                      style: GoogleFonts.shareTechMono(
+                        color: theme.primary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Apps grid
           Positioned.fill(
-            top: 48,
+            top: 80,
             bottom: 90,
             child: appsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: JagXColors.primary),
+              loading: () => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: theme.primary),
+                    const SizedBox(height: 12),
+                    Text(
+                      'SCANNING_PACKAGES...',
+                      style: GoogleFonts.shareTechMono(
+                        color: theme.primary,
+                        fontSize: 12,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               error: (e, _) => Center(
                 child: Text(
-                  'Could not load apps\n$e',
+                  'ERR :: $e',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
+                  style: GoogleFonts.shareTechMono(color: theme.danger),
                 ),
               ),
               data: (apps) {
                 if (apps.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Text(
-                      'No apps found.\nCheck QUERY_ALL_PACKAGES permission.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70),
+                      'NO_PACKAGES_FOUND',
+                      style: GoogleFonts.shareTechMono(color: theme.textDim),
                     ),
                   );
                 }
 
-                // Show first 16 apps on home (2 pages × 8)
                 final homeApps = apps.take(16).toList();
                 final pageCount = (homeApps.length / 8).ceil().clamp(1, 4);
 
@@ -121,19 +170,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     final pageApps = homeApps.sublist(start, end);
 
                     return GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4,
-                        mainAxisSpacing: 20,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 0.75,
+                        mainAxisSpacing: 18,
+                        crossAxisSpacing: 14,
+                        childAspectRatio: 0.78,
                       ),
                       itemCount: pageApps.length,
                       itemBuilder: (context, i) {
                         final app = pageApps[i];
-                        return _RealAppIcon(
+                        return _HackerAppIcon(
                           app: app,
+                          theme: theme,
                           onTap: () => _launch(app),
                         );
                       },
@@ -144,27 +194,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Page indicator
+          // Page dots
           Positioned(
             bottom: 100,
             left: 0,
             right: 0,
             child: appsAsync.maybeWhen(
               data: (apps) {
-                final pageCount = ((apps.take(16).length) / 8).ceil().clamp(1, 4);
+                final pageCount =
+                    ((apps.take(16).length) / 8).ceil().clamp(1, 4);
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(pageCount, (i) {
                     return AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: _currentPage == i ? 18 : 8,
-                      height: 8,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: _currentPage == i ? 16 : 6,
+                      height: 6,
                       decoration: BoxDecoration(
                         color: _currentPage == i
-                            ? JagXColors.primary
-                            : Colors.white38,
-                        borderRadius: BorderRadius.circular(4),
+                            ? theme.primary
+                            : theme.primary.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(3),
+                        boxShadow: _currentPage == i
+                            ? [
+                                BoxShadow(
+                                  color: theme.glow.withOpacity(0.6),
+                                  blurRadius: 6,
+                                )
+                              ]
+                            : null,
                       ),
                     );
                   }),
@@ -174,57 +233,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Dock
+          // Dock - terminal style
           Positioned(
             bottom: 16,
-            left: 24,
-            right: 24,
+            left: 20,
+            right: 20,
             child: Container(
-              height: 72,
+              height: 70,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white12),
+                color: theme.surface.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.primary.withOpacity(0.4)),
+                boxShadow: [
+                  BoxShadow(
+                    color: theme.glow.withOpacity(0.15),
+                    blurRadius: 16,
+                  ),
+                ],
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _DockIcon(
+                  _DockBtn(
+                    theme: theme,
                     icon: Icons.phone,
-                    label: 'Phone',
+                    label: 'CALL',
                     onTap: () async {
                       final apps = await ref.read(installedAppsProvider.future);
-                      final phone = apps.where((a) =>
-                          (a.packageName ?? '').contains('dialer') ||
-                          (a.name ?? '').toLowerCase().contains('phone')).firstOrNull;
+                      final phone = apps
+                          .where((a) =>
+                              (a.packageName ?? '').contains('dialer') ||
+                              (a.name ?? '')
+                                  .toLowerCase()
+                                  .contains('phone'))
+                          .firstOrNull;
                       if (phone != null) _launch(phone);
                     },
                   ),
-                  _DockIcon(
+                  _DockBtn(
+                    theme: theme,
                     icon: Icons.message,
-                    label: 'SMS',
+                    label: 'MSG',
                     onTap: () async {
                       final apps = await ref.read(installedAppsProvider.future);
-                      final sms = apps.where((a) =>
-                          (a.packageName ?? '').contains('mms') ||
-                          (a.packageName ?? '').contains('messaging') ||
-                          (a.name ?? '').toLowerCase().contains('message')).firstOrNull;
+                      final sms = apps
+                          .where((a) =>
+                              (a.packageName ?? '').contains('mms') ||
+                              (a.packageName ?? '').contains('messaging') ||
+                              (a.name ?? '')
+                                  .toLowerCase()
+                                  .contains('message'))
+                          .firstOrNull;
                       if (sms != null) _launch(sms);
                     },
                   ),
-                  _DockIcon(
+                  _DockBtn(
+                    theme: theme,
                     icon: Icons.apps,
-                    label: 'Apps',
+                    label: 'APPS',
                     onTap: _openDrawer,
                   ),
-                  _DockIcon(
+                  _DockBtn(
+                    theme: theme,
                     icon: Icons.camera_alt,
-                    label: 'Camera',
+                    label: 'CAM',
                     onTap: () async {
                       final apps = await ref.read(installedAppsProvider.future);
-                      final cam = apps.where((a) =>
-                          (a.packageName ?? '').contains('camera') ||
-                          (a.name ?? '').toLowerCase() == 'camera').firstOrNull;
+                      final cam = apps
+                          .where((a) =>
+                              (a.packageName ?? '').contains('camera') ||
+                              (a.name ?? '').toLowerCase() == 'camera')
+                          .firstOrNull;
                       if (cam != null) _launch(cam);
                     },
                   ),
@@ -233,12 +312,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Swipe up for drawer
+          // Swipe up
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            height: 24,
+            height: 20,
             child: GestureDetector(
               onVerticalDragEnd: (d) {
                 if (d.primaryVelocity != null && d.primaryVelocity! < -300) {
@@ -259,11 +338,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-class _RealAppIcon extends StatelessWidget {
+class _HackerAppIcon extends StatelessWidget {
   final AppInfo app;
+  final JagXThemeData theme;
   final VoidCallback onTap;
 
-  const _RealAppIcon({required this.app, required this.onTap});
+  const _HackerAppIcon({
+    required this.app,
+    required this.theme,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -273,25 +357,32 @@ class _RealAppIcon extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 54,
+            height: 54,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(16),
+              color: theme.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.primary.withOpacity(0.35)),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.glow.withOpacity(0.12),
+                  blurRadius: 8,
+                ),
+              ],
             ),
             clipBehavior: Clip.antiAlias,
             child: app.icon != null
                 ? Image.memory(app.icon!, fit: BoxFit.cover)
-                : const Icon(Icons.android, color: Colors.white70, size: 28),
+                : Icon(Icons.terminal, color: theme.primary, size: 26),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            app.name ?? 'App',
+            app.name ?? 'APP',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
+            style: GoogleFonts.shareTechMono(
+              color: theme.text,
+              fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -301,12 +392,18 @@ class _RealAppIcon extends StatelessWidget {
   }
 }
 
-class _DockIcon extends StatelessWidget {
+class _DockBtn extends StatelessWidget {
+  final JagXThemeData theme;
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
 
-  const _DockIcon({required this.icon, required this.label, this.onTap});
+  const _DockBtn({
+    required this.theme,
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -315,11 +412,15 @@ class _DockIcon extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: Colors.white, size: 26),
+          Icon(icon, color: theme.primary, size: 24),
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(color: Colors.white70, fontSize: 10),
+            style: GoogleFonts.shareTechMono(
+              color: theme.textDim,
+              fontSize: 9,
+              letterSpacing: 1,
+            ),
           ),
         ],
       ),
