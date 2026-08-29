@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,6 +55,7 @@ jobs:
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
@@ -62,7 +66,7 @@ jobs:
             License: JRILICENSE
             
             **Install**
-            1. Download the APK
+            1. Download the APK from Artifacts or this release
             2. Install on your device (Itel A100 or any Android 7+)
             3. Press Home → choose **JagX OS** → Always
           files: build/app/outputs/flutter-apk/app-release.apk
